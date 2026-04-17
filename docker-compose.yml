@@ -1,0 +1,28 @@
+# Open WebUI in Docker → llama-server on the Windows host (TurboQuant fork).
+# Prereqs: Docker Desktop running; llama-server listening on the host (see README: use -ListenAddress 0.0.0.0 for Docker).
+# UI: http://localhost:3000  —  First launch: create an admin account (or set WEBUI_AUTH=false below).
+
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # Point at llama-server on the host (default TurboQuant setup uses port 8080).
+      - OPENAI_API_BASE_URL=http://host.docker.internal:8080/v1
+      - OPENAI_API_KEY=sk-local-llama
+      - ENABLE_OLLAMA_API=false
+      - ENABLE_OPENAI_API=true
+      # First-time local use; turn on auth for anything exposed beyond localhost.
+      - WEBUI_AUTH=false
+      # Large GGUF model lists can be slow to fetch from llama-server.
+      - AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST=120
+    volumes:
+      - open-webui-data:/app/backend/data
+
+volumes:
+  open-webui-data:

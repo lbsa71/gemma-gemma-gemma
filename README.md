@@ -4,6 +4,21 @@ Run **Gemma 4 26B-A4B** in **GGUF** (e.g. **UD-Q2_K_XL**) with **TurboQuant+** K
 
 ---
 
+## PowerShell execution policy (one-time on Windows)
+
+If you see *“running scripts is disabled on this system”* when using **`.\scripts\…`**, set **RemoteSigned** for your user and unblock repo scripts:
+
+```powershell
+cd D:\Source\lbsa71\gemma-gemma-gemma
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\fix-powershell-execution-policy.ps1
+```
+
+Or double-click **`scripts\fix-powershell-execution-policy.cmd`** (same effect).
+
+After that, you can run **`.\scripts\start-llama-server.ps1`** and **`.\scripts\build-llama-turboquant-cuda.ps1`** directly. If you prefer not to change policy, keep prefixing with **`powershell -NoProfile -ExecutionPolicy Bypass -File …`**.
+
+---
+
 ## Current setup (verified 2026-04-17)
 
 | Item | Value |
@@ -30,13 +45,21 @@ CMake configure step reported **NCCL** not installed (optional; only matters for
 1. **MASM (`ml64`)** — CMake must see an assembler for `ggml`’s `ASM` language. Pass **`-DCMAKE_ASM_COMPILER=<path-to-ml64.exe>`** (or run from a **“x64 Native Tools”** prompt where `ml64` is on `PATH`).
 2. **`CudaToolkitDir` empty in MSBuild** — If CUDA is installed but VS integration does not set MSBuild’s `CudaToolkitDir`, CUDA compiler id fails with: *“The CUDA Toolkit directory '' does not exist”*. Fix by passing **`CMAKE_VS_GLOBALS=CudaToolkitDir=<CUDA root with forward slashes>`**, plus **`-DCMAKE_CUDA_COMPILER=.../nvcc.exe`** and **`-DCUDAToolkit_ROOT=...`**, and set **`CUDA_PATH`** in the same `cmd` session before CMake.
 
-**Reproducible build:** from the repo root, run:
+**Reproducible build:** from the repo root (after [execution policy](#powershell-execution-policy-one-time-on-windows) is fixed):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build-llama-turboquant-cuda.ps1
+.\scripts\build-llama-turboquant-cuda.ps1
+```
+
+If scripts are still blocked:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-llama-turboquant-cuda.ps1
 ```
 
 The script uses **`-DCMAKE_CUDA_ARCHITECTURES=89`** (Ada / RTX 4090). For other GPUs, edit that flag in `scripts\build-llama-turboquant-cuda.ps1`.
+
+After a successful build, start the API with **`.\scripts\start-llama-server.ps1`** (see [Quick start](#quick-start-launch-the-server)).
 
 ---
 
@@ -70,7 +93,64 @@ Confirm exact filenames on the model card if they change.
 
 ---
 
-## 3. Run — text + TurboQuant KV
+## Quick start: launch the server
+
+From the repo root, **`scripts\start-llama-server.ps1`** prints paths, checks that `llama-server.exe` and the default GGUF exist, then starts **`llama-server`** with **TurboQuant** (`q8_0` + `turbo4`) and **`--jinja`**.
+
+```powershell
+cd D:\Source\lbsa71\gemma-gemma-gemma
+.\scripts\start-llama-server.ps1
+```
+
+**Vision (multimodal):** same script with **`-Multimodal`** (adds `--mmproj` and Gemma 4 image / micro-batch flags):
+
+```powershell
+.\scripts\start-llama-server.ps1 -Multimodal
+```
+
+**Useful parameters:** `-Port 8080`, `-ListenAddress 127.0.0.1`, `-Ngl 99`, `-Context 8192`, `-Model "...\custom.gguf"`, `-Mmproj "...\mmproj.gguf"`. Run **`Get-Help .\scripts\start-llama-server.ps1 -Full`** for the full list.
+
+**Docker Open WebUI (below):** bind **`llama-server` to the host**, not loopback-only, so the container can reach it: **`-ListenAddress 0.0.0.0`** (still use firewall rules if you expose the machine beyond localhost).
+
+---
+
+## Open WebUI in Docker (browser UI)
+
+[Open WebUI](https://github.com/open-webui/open-webui) is a self-hosted web app. This repo includes **`docker-compose.yml`** that:
+
+- Maps the UI to **`http://localhost:3000`**
+- Preconfigures **OpenAI-compatible** access to **`http://host.docker.internal:8080/v1`** (your **`llama-server`** on Windows; see [Open WebUI docs — OpenAI-compatible / local](https://docs.openwebui.com/getting-started/quick-start/connect-a-provider/starting-with-openai-compatible/))
+- Disables bundled **Ollama** API noise (`ENABLE_OLLAMA_API=false`) and sets a dummy **`OPENAI_API_KEY`** (many local servers accept any non-empty key)
+- Sets **`WEBUI_AUTH=false`** for easy first use on a trusted machine (turn auth on for shared networks)
+
+### Prerequisites
+
+1. **Docker Desktop** installed and **running** (Start menu → Docker Desktop; wait until the engine is healthy). If `docker version` fails with *pipe/docker_engine*, the daemon is not up yet.
+2. **`llama-server` running on the host** on port **8080** (or change **`OPENAI_API_BASE_URL`** in `docker-compose.yml` to match your port).
+
+### Start WebUI + check connectivity
+
+```powershell
+cd D:\Source\lbsa71\gemma-gemma-gemma
+
+# Terminal A — llama (use 0.0.0.0 so Docker can reach the host; add -Multimodal for images)
+.\scripts\start-llama-server.ps1 -Multimodal -ListenAddress 0.0.0.0 -Port 8080
+
+# Terminal B — Open WebUI
+.\scripts\docker-open-webui.ps1 -Action up
+.\scripts\docker-open-webui.ps1 -Action verify
+```
+
+Open **`http://localhost:3000`** in your browser.
+
+- **First visit:** create the admin account (unless you disabled signup in newer WebUI builds).
+- **Provider URL:** if models do not appear, open **Admin Panel → Connections → OpenAI** and set the URL to **`http://host.docker.internal:8080/v1`** and any non-empty API key, then save (Open WebUI may persist settings in its volume and ignore later env changes — see [troubleshooting](https://docs.openwebui.com/troubleshooting/)).
+
+**Logs:** `.\scripts\docker-open-webui.ps1 -Action logs` — **Stop:** `.\scripts\docker-open-webui.ps1 -Action down`
+
+---
+
+## 3. Run — text + TurboQuant KV (manual)
 
 For very low bit weights, start with **high K precision** and **turbo on V** (e.g. **`q8_0` + `turbo4`**).
 
@@ -86,7 +166,7 @@ $M   = Join-Path $Root "models\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q2_
 
 ---
 
-## 4. Run — multimodal + TurboQuant KV
+## 4. Run — multimodal + TurboQuant KV (manual)
 
 ```powershell
 $Root = "D:\Source\lbsa71\gemma-gemma-gemma"
@@ -112,6 +192,7 @@ Use `llama-mtmd-cli.exe` from the same folder for CLI image tests. See upstream 
 
 ## References
 
+- [Open WebUI](https://github.com/open-webui/open-webui) — [OpenAI-compatible providers](https://docs.openwebui.com/getting-started/quick-start/connect-a-provider/starting-with-openai-compatible/)
 - [turboquant_plus README](https://github.com/TheTom/turboquant_plus)
 - [TheTom/llama-cpp-turboquant](https://github.com/TheTom/llama-cpp-turboquant) — branch `feature/turboquant-kv-cache`
 - [llama.cpp multimodal docs](https://github.com/ggml-org/llama.cpp/blob/master/docs/multimodal.md)
