@@ -76,6 +76,6 @@ switch ($Action) {
         }
         Write-Host ""
         Write-Host "Open WebUI UI: http://localhost:3000" -ForegroundColor Green
-        Write-Host "Admin → Connections → OpenAI: URL should be http://host.docker.internal:8080/v1 (pre-seeded via compose env on first install; if you already configured WebUI, adjust in UI)." -ForegroundColor DarkGray
+        Write-Host "Admin > Connections > OpenAI: URL should be http://host.docker.internal:8080/v1 (pre-seeded via compose env on first install; if you already configured WebUI, adjust in UI)." -ForegroundColor DarkGray
     }
 }
